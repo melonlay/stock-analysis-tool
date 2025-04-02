@@ -37,27 +37,39 @@ AUGMENTATION_CONFIG: Dict[str, Any] = {
 # 模型訓練設定
 TRAINING_CONFIG: Dict[str, Any] = {
     # 資料處理設定
-    'batch_size': 64,  # 批次大小
+    'batch_size': 32,  # 批次大小
     'use_augmentation': True,  # 是否使用資料增強
-    'n_augment': 5,  # 每個樣本增強次數
+    'n_augment': 3,  # 每個樣本增強次數
     'positive_only_augment': True,  # 是否只對正樣本進行增強
 
     # 模型架構設定
-    'hidden_sizes': [256, 128, 64],  # 隱藏層大小
-    'dropout_rate': 0.4,  # Dropout 率
-    'weight_decay': 0.02,  # 權重衰減率
-    'pos_weight_multiplier': 1.5,  # 正樣本權重倍數
+    'hidden_sizes': [128, 64, 32],  # 隱藏層大小
+    'dropout_rate': 0.5,  # Dropout 率
+    'weight_decay': 0.1,  # 權重衰減率
+    'pos_weight_multiplier': 2.0,  # 正樣本權重倍數
+    'use_residual': True,  # 是否使用殘差連接
+    'l1_lambda': 0.05,  # L1 正規化係數
+    'gradient_clip': 0.5,  # 梯度裁剪閾值
+    'batch_norm': True,  # 是否使用批次正規化
+    'activation': 'leaky_relu',  # 激活函數
 
     # 優化器設定
-    'learning_rate': 0.00005,  # 學習率
-    'epochs': 50,  # 訓練輪數
-    'patience': 10,  # 早停耐心值
+    'learning_rate': 0.00001,  # 學習率
+    'epochs': 100,  # 訓練輪數
+    'patience': 15,  # 早停耐心值
 
     # 學習率排程器設定
     'lr_scheduler': {
-        'factor': 0.7,  # 學習率調整因子
-        'patience': 7,  # 學習率調整耐心值
-        'min_lr': 1e-6,  # 最小學習率
+        'factor': 0.5,  # 學習率調整因子
+        'patience': 10,  # 學習率調整耐心值
+        'min_lr': 1e-7,  # 最小學習率
+    },
+
+    # 權重初始化設定
+    'weight_init': {
+        'method': 'kaiming',  # 權重初始化方法
+        'mode': 'fan_out',  # Kaiming 初始化模式
+        'nonlinearity': 'leaky_relu',  # 非線性函數類型
     }
 }
 
