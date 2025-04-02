@@ -112,11 +112,9 @@ def evaluate(
         for features, labels in data_loader:
             features, labels = features.to(device), labels.to(device)
             outputs = model(features)
-            outputs = outputs.view(-1)
-            labels = labels.float()
-
-            # 確保輸出在 [0,1] 範圍內
-            outputs = torch.clamp(outputs, 0, 1)
+            # 確保輸出和標籤的維度一致
+            outputs = outputs.squeeze(-1)  # 移除最後一個維度
+            labels = labels.squeeze(-1)    # 移除最後一個維度
 
             loss = criterion(outputs, labels)
             total_loss += loss.item()

@@ -175,15 +175,21 @@ class DataAugmentor:
         Returns:
             增強後的特徵矩陣和標籤向量 (PyTorch tensor)
         """
+        device = X.device
         n_samples = len(X)
         X_aug = X.clone()
         y_aug = y.clone()
 
-        for i in range(n_samples):
-            if not positive_only or y[i] == 1:
-                X_aug[i] = self.augment_single_sample(X[i])
-            else:
-                X_aug[i] = X[i]
+        # 使用向量化操作進行資料增強
+        if positive_only:
+            # 只對正樣本進行增強
+            positive_mask = (y_aug.squeeze() == 1)  # 移除多餘的維度
+            if positive_mask.any():
+                X_aug[positive_mask] = self.add_adaptive_noise(
+                    X_aug[positive_mask])
+        else:
+            # 對所有樣本進行增強
+            X_aug = self.add_adaptive_noise(X_aug)
 
         return X_aug, y_aug
 

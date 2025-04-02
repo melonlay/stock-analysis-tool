@@ -148,7 +148,7 @@ class DataPreprocessor:
             self.scaler.fit(X)
             self.logger.info("預處理器擬合完成！")
 
-    def transform(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    def transform(self, df: pd.DataFrame) -> np.ndarray:
         """
         轉換資料
 
@@ -156,7 +156,7 @@ class DataPreprocessor:
             df (pd.DataFrame): 要轉換的資料
 
         Returns:
-            Tuple[np.ndarray, np.ndarray]: (特徵矩陣, 標籤陣列)
+            np.ndarray: 轉換後的特徵矩陣
         """
         self.logger.info("開始轉換資料...")
 
@@ -190,7 +190,7 @@ class DataPreprocessor:
             X = self.scaler.transform(X)
 
         self.logger.info("資料轉換完成！")
-        return X, df[self.label_column].values
+        return X
 
     @staticmethod
     def transform_unlabeled(data: Union[pd.DataFrame, pd.Series, Dict[str, Any]], preprocessor_path: str) -> np.ndarray:

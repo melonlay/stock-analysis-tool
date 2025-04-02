@@ -121,7 +121,9 @@ AUGMENTATION_CONFIG = {
         'base_noise': 0.05,    # Base noise multiplier
         'skewness_factor': 0.5,# Skewness impact factor
         'kurtosis_factor': 0.3,# Kurtosis impact factor
-        # ... other factors ...
+        'outlier_factor': 0.4, # Outlier impact factor
+        'trend_factor': 0.3,   # Trend impact factor
+        'seasonal_factor': 0.2 # Seasonal impact factor
     }
 }
 ```
@@ -129,12 +131,12 @@ AUGMENTATION_CONFIG = {
 ### Training Configuration
 ```python
 TRAINING_CONFIG = {
-    # Data processing
+    # Data processing settings
     'batch_size': 64,
-    'use_augmentation': True,
-    'n_augment': 5,           # Number of augmentations per sample
+    'use_augmentation': True,  # Enable data augmentation
+    'positive_only': True,     # Only augment positive samples
     
-    # Model architecture
+    # Model architecture settings
     'hidden_sizes': [256, 128, 64],
     'dropout_rate': 0.4,
     'weight_decay': 0.02,
@@ -144,7 +146,7 @@ TRAINING_CONFIG = {
     'epochs': 50,
     'patience': 10,           # Early stopping patience
     
-    # Learning rate scheduler
+    # Learning rate scheduler settings
     'lr_scheduler': {
         'factor': 0.7,
         'patience': 7,
@@ -318,7 +320,9 @@ AUGMENTATION_CONFIG = {
         'base_noise': 0.05,    # 基礎噪聲倍數
         'skewness_factor': 0.5,# 偏度影響因子
         'kurtosis_factor': 0.3,# 峰度影響因子
-        # ... 其他因子 ...
+        'outlier_factor': 0.4, # 異常值影響因子
+        'trend_factor': 0.3,   # 趨勢影響因子
+        'seasonal_factor': 0.2 # 季節性影響因子
     }
 }
 ```
@@ -328,8 +332,8 @@ AUGMENTATION_CONFIG = {
 TRAINING_CONFIG = {
     # 資料處理設定
     'batch_size': 64,
-    'use_augmentation': True,
-    'n_augment': 5,           # 每個樣本增強次數
+    'use_augmentation': True,  # 是否使用資料增強
+    'positive_only': True,     # 是否只對正樣本進行增強
     
     # 模型架構設定
     'hidden_sizes': [256, 128, 64],

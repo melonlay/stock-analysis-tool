@@ -12,11 +12,10 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from datetime import datetime
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, accuracy_score
 
 # 添加專案根目錄到 Python 路徑
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -102,167 +101,86 @@ def setup_logger(log_dir: str) -> logging.Logger:
     return logger
 
 
+def find_best_threshold(predictions: np.ndarray, labels: np.ndarray) -> Tuple[float, float, float]:
+    """
+    尋找最佳閾值並計算相關指標
+
+    Args:
+        predictions: 模型預測值
+        labels: 真實標籤
+
+    Returns:
+        Tuple[float, float, float]: (最佳閾值, 準確率, F1分數)
+    """
+    best_threshold = 0.5
+    best_f1 = 0
+    best_accuracy = 0
+
+    for threshold in np.arange(0.1, 0.9, 0.05):
+        pred_labels = (predictions > threshold).astype(int)
+        f1 = f1_score(labels, pred_labels)
+        accuracy = accuracy_score(labels, pred_labels)
+
+        if f1 > best_f1:
+            best_f1 = f1
+            best_accuracy = accuracy
+            best_threshold = threshold
+
+    return best_threshold, best_accuracy, best_f1
+
+
 def train_epoch(
     model: nn.Module,
     train_loader: DataLoader,
     criterion: nn.Module,
-    optimizer: optim.Optimizer,
+    optimizer: torch.optim.Optimizer,
     device: torch.device,
-    logger: Optional[logging.Logger],
-    augmentor: Optional[DataAugmentor] = None,
-    positive_only: bool = True
+    augmentor: DataAugmentor,
+    logger: logging.Logger
 ) -> Tuple[float, float, float, float]:
     """
     訓練一個 epoch
 
     Args:
-        model (nn.Module): 模型
-        train_loader (DataLoader): 訓練資料載入器
-        criterion (nn.Module): 損失函數
-        optimizer (optim.Optimizer): 優化器
-        device (torch.device): 運算設備
-        logger (Optional[logging.Logger]): 日誌記錄器
-        augmentor (Optional[DataAugmentor]): 資料增強器
-        positive_only (bool): 是否只對正樣本進行增強
+        model: 模型
+        train_loader: 訓練資料載入器
+        criterion: 損失函數
+        optimizer: 優化器
+        device: 設備
+        augmentor: 資料增強器
+        logger: 日誌記錄器
 
     Returns:
-        Tuple[float, float, float, float]: (平均損失, 準確率, F1分數, 最佳閾值)
+        Tuple[float, float, float, float]: 平均損失、準確率、F1 分數、最佳閾值
     """
-    if logger is None:
-        logger = logging.getLogger('StockModel')
-
     model.train()
     total_loss = 0
-    total_correct = 0
-    total_samples = 0
-    all_outputs = []
+    all_preds = []
     all_labels = []
 
     for batch_idx, (X, y) in enumerate(train_loader):
-        # 將資料移到設備上
-        X = X.to(device)
-        y = y.to(device)
+        X, y = X.to(device), y.to(device)
 
-        # 在正向傳遞前進行資料增強
-        if augmentor is not None:
-            X, y = augmentor.augment_batch(X, y, positive_only=positive_only)
+        # 使用資料增強
+        X_aug, y_aug = augmentor.augment_batch(X, y, positive_only=True)
+        X_aug, y_aug = X_aug.to(device), y_aug.to(device)
 
-        # 前向傳遞
-        outputs = model(X)
-        loss = criterion(outputs, y.unsqueeze(1))
-
-        # 反向傳遞和優化
         optimizer.zero_grad()
+        outputs = model(X_aug)
+        loss = criterion(outputs, y_aug)
         loss.backward()
         optimizer.step()
 
-        # 收集預測結果
-        probs = torch.sigmoid(outputs)
-        all_outputs.extend(probs.detach().cpu().numpy())
-        all_labels.extend(y.cpu().numpy())
-
-        # 更新統計資訊
         total_loss += loss.item()
-        predictions = (probs > 0.5).float()
-        total_correct += (predictions.squeeze() == y).sum().item()
-        total_samples += len(y)
+        all_preds.extend(outputs.detach().cpu().numpy())
+        all_labels.extend(y_aug.detach().cpu().numpy())
 
-    # 計算最終指標
-    avg_loss = total_loss / len(train_loader)
-    accuracy = total_correct / total_samples
-
-    # 尋找最佳閾值和計算 F1 分數
-    all_outputs = np.array(all_outputs)
+    # 計算指標
+    all_preds = np.array(all_preds)
     all_labels = np.array(all_labels)
-    best_threshold = 0.5
-    best_f1 = 0
+    best_threshold, accuracy, f1 = find_best_threshold(all_preds, all_labels)
 
-    for threshold in np.arange(0.1, 0.9, 0.05):
-        predictions = (all_outputs > threshold).astype(int)
-        f1 = f1_score(all_labels, predictions)
-        if f1 > best_f1:
-            best_f1 = f1
-            best_threshold = threshold
-
-    return avg_loss, accuracy, best_f1, best_threshold
-
-
-def prepare_data(
-    df: pd.DataFrame,
-    use_augmentation: bool = False,
-    logger: Optional[logging.Logger] = None,
-    preprocessor: Optional[DataPreprocessor] = None
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, DataPreprocessor, Optional[DataAugmentor]]:
-    """
-    準備訓練資料
-
-    Args:
-        df: 已讀取的資料框
-        use_augmentation: 是否使用資料增強
-        logger: 日誌記錄器
-        preprocessor: 預處理器，如果提供則使用現有的
-
-    Returns:
-        訓練集特徵、測試集特徵、訓練集標籤、測試集標籤、預處理器、資料增強器
-    """
-    if logger is None:
-        logger = logging.getLogger('StockModel')
-
-    label_column = PREPROCESSING_CONFIG['label_column']
-    logger.info(f"原始資料集大小: {len(df)}")
-    logger.info(f"原始正樣本比例: {df[label_column].mean():.4f}")
-
-    # 資料預處理
-    logger.info("正在進行資料預處理...")
-    if preprocessor is None:
-        preprocessor = DataPreprocessor(
-            standardize=PREPROCESSING_CONFIG['standardize'],
-            handle_missing=PREPROCESSING_CONFIG['handle_missing'],
-            detect_outliers=PREPROCESSING_CONFIG['outlier_detection'],
-            feature_selection=PREPROCESSING_CONFIG['feature_selection'],
-            logger=logger
-        )
-    preprocessor.fit(df)
-    X, y = preprocessor.transform(df)
-
-    # 分割資料
-    logger.info("正在分割資料...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y,
-        test_size=VALIDATION_CONFIG['test_size'],
-        random_state=VALIDATION_CONFIG['random_state'],
-        stratify=y if VALIDATION_CONFIG['stratify'] else None
-    )
-
-    # 初始化資料增強器（如果需要）
-    augmentor = None
-    if use_augmentation:
-        logger.info("正在初始化資料增強器...")
-        augmentor = DataAugmentor(logger=logger)
-
-        # 分析資料特性並調整噪聲參數
-        stats = augmentor.analyze_data_characteristics(X_train)
-        augmentor.adjust_noise_levels(stats)
-
-        # 記錄資料特性分析結果
-        logger.info("\n資料特性分析結果:")
-        mean_stats = {
-            'std': np.mean([feature_stats['std'] for feature_stats in stats.values()]),
-            'skewness': np.mean([feature_stats['skewness'] for feature_stats in stats.values()]),
-            'kurtosis': np.mean([feature_stats['kurtosis'] for feature_stats in stats.values()]),
-            'outlier_ratio': np.mean([feature_stats['outlier_ratio'] for feature_stats in stats.values()]),
-            'trend': np.mean([feature_stats['trend'] for feature_stats in stats.values()]),
-            'seasonality': np.mean([feature_stats['seasonality'] for feature_stats in stats.values()])
-        }
-
-        logger.info(f"平均標準差: {mean_stats['std']:.4f}")
-        logger.info(f"平均偏度: {mean_stats['skewness']:.4f}")
-        logger.info(f"平均峰度: {mean_stats['kurtosis']:.4f}")
-        logger.info(f"平均異常值比例: {mean_stats['outlier_ratio']:.4f}")
-        logger.info(f"平均趨勢強度: {mean_stats['trend']:.4f}")
-        logger.info(f"平均季節性強度: {mean_stats['seasonality']:.4f}")
-
-    return X_train, X_test, y_train, y_test, preprocessor, augmentor
+    return total_loss / len(train_loader), accuracy, f1, best_threshold
 
 
 def main():
@@ -341,12 +259,19 @@ def main():
         logger.info(f"正在載入預處理器：{args.preprocessor}")
         preprocessor = DataPreprocessor.load(args.preprocessor, logger)
 
-    X_train, X_test, y_train, y_test, preprocessor, augmentor = prepare_data(
-        df, args.use_augmentation, logger, preprocessor)
+    # 準備資料
+    X_train, y_train, X_test, y_test, preprocessor, augmentor = prepare_data(
+        data=df,
+        test_size=args.test_size,
+        random_state=args.random_state,
+        logger=logger,
+        preprocessor=preprocessor,
+        use_smote=True  # 預設使用 SMOTE
+    )
 
     # 檢查類別分布
-    train_pos_ratio = np.mean(y_train)
-    test_pos_ratio = np.mean(y_test)
+    train_pos_ratio = y_train.mean().item()
+    test_pos_ratio = y_test.mean().item()
     logger.info(f"\n類別分布:")
     logger.info(f"訓練集正樣本比例: {train_pos_ratio:.4f}")
     logger.info(f"測試集正樣本比例: {test_pos_ratio:.4f}")
@@ -361,10 +286,50 @@ def main():
     train_dataset = StockDataset(X_train, y_train)
     test_dataset = StockDataset(X_test, y_test)
 
+    # 計算適當的批次大小
+    batch_size = min(args.batch_size, len(train_dataset))
+    logger.info(f"原始批次大小: {args.batch_size}")
+    logger.info(f"調整後批次大小: {batch_size}")
+
+    # 確保批次大小是 2 的冪次方
+    batch_size = 2 ** int(np.log2(batch_size))
+    logger.info(f"最終批次大小: {batch_size}")
+
+    # 檢查資料集大小
+    logger.info(f"訓練集特徵形狀: {X_train.shape}")
+    logger.info(f"訓練集標籤形狀: {y_train.shape}")
+    logger.info(f"測試集特徵形狀: {X_test.shape}")
+    logger.info(f"測試集標籤形狀: {y_test.shape}")
+
+    # 確保資料集大小一致
+    if len(train_dataset) != X_train.shape[0]:
+        raise ValueError(
+            f"訓練集大小不匹配: {len(train_dataset)} != {X_train.shape[0]}")
+    if len(test_dataset) != X_test.shape[0]:
+        raise ValueError(f"測試集大小不匹配: {len(test_dataset)} != {X_test.shape[0]}")
+
     train_loader = DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True)
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=True,
+        drop_last=True  # 丟棄最後一個不完整的批次
+    )
     test_loader = DataLoader(
-        test_dataset, batch_size=args.batch_size, shuffle=False)
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True,
+        drop_last=True  # 丟棄最後一個不完整的批次
+    )
+
+    logger.info(f"訓練集大小: {len(train_dataset)}")
+    logger.info(f"測試集大小: {len(test_dataset)}")
+    logger.info(f"使用批次大小: {batch_size}")
+    logger.info(f"訓練集批次數: {len(train_loader)}")
+    logger.info(f"測試集批次數: {len(test_loader)}")
 
     # 創建模型
     input_size = X_train.shape[1]
@@ -379,16 +344,7 @@ def main():
 
     # 輸出模型架構
     logger.info("\n模型架構:")
-    logger.info(f"""
-DNN 模型摘要:
-輸入維度: {input_size}
-隱藏層: {hidden_sizes}
-Dropout率: {args.dropout_rate}
-批次正規化: 是
-激活函數: leaky_relu
-總參數數量: {sum(p.numel() for p in model.parameters())}
-可訓練參數數量: {sum(p.numel() for p in model.parameters() if p.requires_grad)}
-""")
+    logger.info(model.get_model_summary())
 
     # 定義損失函數
     pos_weight = (1 - train_pos_ratio) / train_pos_ratio * \
@@ -432,7 +388,7 @@ Dropout率: {args.dropout_rate}
     for epoch in tqdm(range(args.epochs), desc="訓練進度"):
         # 訓練一個 epoch
         train_loss, train_acc, train_f1, train_threshold = train_epoch(
-            model, train_loader, criterion, optimizer, device, logger, augmentor)
+            model, train_loader, criterion, optimizer, device, augmentor, logger)
         train_losses.append(train_loss)
         train_accuracies.append(train_acc)
         train_f1s.append(train_f1)
